@@ -913,8 +913,8 @@ function mkSfx() {
     try {
       const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
       ac = new AC(); master = ac.createGain(); master.gain.value = muted ? 0 : 0.55; master.connect(ac.destination);
-      osc = ac.createOscillator(); osc.type = "sawtooth";
-      const f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 520;
+      osc = ac.createOscillator(); osc.type = "triangle";
+      const f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 330;
       eg = ac.createGain(); eg.gain.value = 0; osc.connect(f); f.connect(eg); eg.connect(master); osc.start();
       nbuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
       const d = nbuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -942,18 +942,38 @@ function mkSfx() {
     if (!ac) return;
     try {
       const t0 = ac.currentTime;
-      [[0, 0.17, 392, 330], [0.15, 0.42, 330, 262]].forEach(function (n) {
-        const t = t0 + n[0], dur = n[1], g = ac.createGain(), bp = ac.createBiquadFilter(), sh = ac.createWaveShaper();
-        const curve = new Float32Array(256); for (let i = 0; i < 256; i++) { const x = i / 128 - 1; curve[i] = Math.tanh(x * 2.4); } sh.curve = curve;
-        bp.type = "bandpass"; bp.frequency.value = 1050; bp.Q.value = 1.3;
-        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.42, t + 0.015); g.gain.setValueAtTime(0.42, t + dur * 0.62); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-        [1, 1.26].forEach(function (r, i) {
-          const o = ac.createOscillator(); o.type = i ? "square" : "sawtooth";
-          o.frequency.setValueAtTime(n[2] * r * 1.06, t); o.frequency.exponentialRampToValueAtTime(n[3] * r, t + dur * 0.8);
-          o.connect(sh); o.start(t); o.stop(t + dur + 0.04);
+      [0, 0.4].forEach(function (off) {
+        const t = t0 + off, dur = 0.3, g = ac.createGain(), bp = ac.createBiquadFilter(), sh = ac.createWaveShaper(), trem = ac.createOscillator(), tg = ac.createGain();
+        const curve = new Float32Array(256); for (let k = 0; k < 256; k++) { const x = k / 128 - 1; curve[k] = Math.tanh(x * 3); } sh.curve = curve;
+        bp.type = "bandpass"; bp.frequency.value = 1250; bp.Q.value = 1.6;
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.4, t + 0.02); g.gain.setValueAtTime(0.4, t + dur * 0.75); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        trem.frequency.value = 34; tg.gain.value = 0.12; trem.connect(tg); tg.connect(g.gain); trem.start(t); trem.stop(t + dur + 0.05);
+        [[410, "sawtooth"], [521, "square"]].forEach(function (n) {
+          const o = ac.createOscillator(); o.type = n[1];
+          o.frequency.setValueAtTime(n[0] * 1.05, t); o.frequency.exponentialRampToValueAtTime(n[0], t + 0.06);
+          o.connect(sh); o.start(t); o.stop(t + dur + 0.05);
         });
         sh.connect(bp); bp.connect(g); g.connect(master);
       });
+    } catch (err) {}
+  }
+  /* engine revving: a few throaty bursts climbing in pitch (Race! / GO!) */
+  function rev(big) {
+    if (!ac) return;
+    try {
+      const t0 = ac.currentTime, n = big ? 3 : 4;
+      for (let k = 0; k < n; k++) {
+        const t = t0 + k * (big ? 0.28 : 0.3), dur = big ? 0.55 : 0.34, top = (big ? 260 : 150) + k * 38;
+        const o = ac.createOscillator(), o2 = ac.createOscillator(), g = ac.createGain(), lp = ac.createBiquadFilter(), p = ac.createOscillator(), pg = ac.createGain();
+        o.type = "sawtooth"; o2.type = "square";
+        o.frequency.setValueAtTime(48, t); o.frequency.exponentialRampToValueAtTime(top, t + dur * 0.7); o.frequency.exponentialRampToValueAtTime(top * 0.55, t + dur);
+        o2.frequency.setValueAtTime(24, t); o2.frequency.exponentialRampToValueAtTime(top / 2, t + dur * 0.7); o2.frequency.exponentialRampToValueAtTime(top * 0.28, t + dur);
+        lp.type = "lowpass"; lp.frequency.setValueAtTime(380, t); lp.frequency.exponentialRampToValueAtTime(1500, t + dur * 0.7); lp.Q.value = 3;
+        p.frequency.value = 27; pg.gain.value = 0.35; p.connect(pg); pg.connect(g.gain);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(big ? 0.34 : 0.26, t + 0.06); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        o.connect(lp); o2.connect(lp); lp.connect(g); g.connect(master);
+        o.start(t); o2.start(t); p.start(t); o.stop(t + dur + 0.05); o2.stop(t + dur + 0.05); p.stop(t + dur + 0.05);
+      }
     } catch (err) {}
   }
   /* street life: an original old-Bengali-flavoured tune on a harmonium from the pandal loudspeakers,
@@ -976,12 +996,8 @@ function mkSfx() {
     [[520, 3.1], [900, 4.3], [1500, 5.2]].forEach(function (f, i) {
       const s = ac.createBufferSource(), b = ac.createBiquadFilter(), g = ac.createGain(), l = ac.createOscillator(), lg = ac.createGain();
       s.buffer = nbuf; s.loop = true; b.type = "bandpass"; b.frequency.value = f[0]; b.Q.value = 2.2;
-      g.gain.value = 0.5; l.frequency.value = f[1]; lg.gain.value = 0.45; l.connect(lg); lg.connect(g.gain); l.start();
+      g.gain.value = 0.35; l.frequency.value = f[1]; lg.gain.value = 0.34; l.connect(lg); lg.connect(g.gain); l.start();
       s.connect(b); b.connect(g); g.connect(chat); s.start(ac.currentTime, i * 0.3);
-    });
-    // tanpura-ish drone on Sa and Pa
-    [SA / 2, SA * 0.75].forEach(function (f) {
-      const o = ac.createOscillator(), g = ac.createGain(); o.type = "triangle"; o.frequency.value = f; g.gain.value = 0.05; o.connect(g); g.connect(mus); o.start();
     });
     try { if (window.speechSynthesis) { const pick = function () { const v = window.speechSynthesis.getVoices() || []; bnVoice = v.filter(function (x) { return /^bn/i.test(x.lang); })[0] || null; }; pick(); window.speechSynthesis.onvoiceschanged = pick; } } catch (err) {}
   }
@@ -1006,8 +1022,8 @@ function mkSfx() {
     if (m === null) { try { if (mus) { mus.gain.setTargetAtTime(0, ac.currentTime, 0.1); chat.gain.setTargetAtTime(0, ac.currentTime, 0.1); } if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (err) {} ambOn = false; return; }
     setupAmb(); if (!mus) return;
     const t = ac.currentTime, BEAT = 0.62;
-    mus.gain.setTargetAtTime(muted ? 0 : m * 1.1, t, 0.25);
-    chat.gain.setTargetAtTime(muted ? 0 : c * 0.07, t, 0.3);
+    mus.gain.setTargetAtTime(muted ? 0 : m * 1.0, t, 0.25);
+    chat.gain.setTargetAtTime(muted ? 0 : Math.max(0, c - 0.15) * 0.045, t, 0.3);
     if (!ambOn) { ambOn = true; nextBeat = t + 0.05; beatNo = 0; }
     if (m < 0.02) { nextBeat = Math.max(nextBeat, t + 0.05); }
     else {
@@ -1033,11 +1049,12 @@ function mkSfx() {
     bump: function () { noise(0.2, 0.4, 800); tone(110, 50, 0.2, "square", 0.1); },
     horn: function () { tone(340, 330, 0.18, "square", 0.05); },
     honk: function () { honk(); },
+    rev: function (b) { rev(b); },
     amb: function (m, c) { ambience(m, c); },
     finish: function () { [523, 659, 784, 1047].forEach(function (f, i) { setTimeout(function () { tone(f, f, 0.22, "triangle", 0.12); }, i * 120); }); },
     engine: function (v, on, boost) {
       if (!ac || !osc) return;
-      try { const t = ac.currentTime; eg.gain.setTargetAtTime(on ? 0.05 : 0, t, 0.08); osc.frequency.setTargetAtTime(44 + v * 0.011 + (boost ? 16 : 0), t, 0.06); } catch (err) {}
+      try { const t = ac.currentTime; eg.gain.setTargetAtTime(on && v > 300 ? 0.035 : 0, t, 0.12); osc.frequency.setTargetAtTime(70 + v * 0.012 + (boost ? 18 : 0), t, 0.08); } catch (err) {}
     },
     mute: function (m) { muted = m; try { if (master) master.gain.value = m ? 0 : 0.55; } catch (err) {} },
     close: function () { try { if (ac) ac.close(); } catch (err) {} ac = null; }
@@ -1292,7 +1309,7 @@ function createGame(canvas, miniCanvas, cb) {
     if (S.phase === "countdown") {
       S.cd -= dt;
       const c = S.cd > 2.6 ? 3 : S.cd > 1.6 ? 2 : S.cd > 0.6 ? 1 : S.cd > -0.7 ? 0 : -1;
-      if (c !== S.lastCount) { if (c >= 0) sfx.beep(c === 0); S.lastCount = c; }
+      if (c !== S.lastCount) { if (c >= 0) { sfx.beep(c === 0); if (c === 0) sfx.rev(true); } S.lastCount = c; }
       S.count = c;
       if (S.cd <= 0.6) S.phase = "race";
     } else if (S.count >= 0 && S.phase === "race") { S.cd -= dt; if (S.cd <= -0.7) S.count = -1; }
@@ -1419,7 +1436,7 @@ function createGame(canvas, miniCanvas, cb) {
   raf = requestAnimationFrame(frame);
 
   const api = {
-    start: function (o) { setupRace({ demo: false, kind: o.kind, diff: o.diff, laps: o.laps }); sfx.init(); sfx.resume(); if (cb.onHud) cb.onHud(snap()); },
+    start: function (o) { setupRace({ demo: false, kind: o.kind, diff: o.diff, laps: o.laps }); sfx.init(); sfx.resume(); sfx.rev(false); if (cb.onHud) cb.onHud(snap()); },
     toMenu: function () { setupRace({ demo: true, kind: S.kind, diff: "normal" }); sfx.engine(0, false, false); sfx.amb(null); },
     pause: function () { if (S.phase === "race" || S.phase === "countdown") { S.paused = true; sfx.engine(0, false, false); sfx.amb(null); clearKeys(); } },
     resume: function () { if (S.paused) { S.paused = false; last = null; sfx.resume(); } },
