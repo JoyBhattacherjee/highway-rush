@@ -247,7 +247,7 @@ canvas.stage{display:block;width:100%;height:100%;touch-action:none}
 const SEG = 200, ROAD = 2000, RUMBLE = 3, LANES = 4;
 const MS = 1 / 306;            // metres per game unit (12000 units/s ~ 141 km/h)
 const HALF = ROAD * MS;        // half road width in metres (~6.5)
-const KERB = 0.9, WALK = 13.0, FAR = 95;
+const KERB = 0.9, WALK = 13.0, FAR = 95, LEN = 900;
 const FOGC = 0xffb877;
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -364,6 +364,9 @@ Builder.prototype.cyl = function (x, y, z, rt, rb, h, col, seg, rx, ry, rz) { co
 Builder.prototype.cone = function (x, y, z, r, h, col, seg, rx, ry, rz) { seg = seg || 8; return this.add(cached("cone" + seg, () => new THREE.ConeGeometry(1, 1, seg)), compose(x, y, z, rx, ry, rz, r, h, r), col); };
 Builder.prototype.sph = function (x, y, z, rx, ry, rz, col, flat) {
   return this.add(cached(flat ? "ico" : "sph", () => { if (flat) { const g = new THREE.IcosahedronGeometry(1, 1).toNonIndexed(); g.computeVertexNormals(); return g; } return new THREE.SphereGeometry(1, 12, 9); }), compose(x, y, z, 0, 0, 0, rx, ry, rz), col);
+};
+Builder.prototype.blob = function (x, y, z, rx, ry, rz, col) {
+  return this.add(cached("ico0", () => { const g = new THREE.IcosahedronGeometry(1, 0); g.computeVertexNormals(); return g; }), compose(x, y, z, 0, 0, 0, rx, ry, rz), col);
 };
 Builder.prototype.tri = function (a, b, c, col) {
   const cc = new THREE.Color(col), e1 = new THREE.Vector3().subVectors(b, a), e2 = new THREE.Vector3().subVectors(c, a), nn = e1.cross(e2).normalize();
@@ -690,17 +693,124 @@ function buildWorld(scene, renderer) {
     const sb = sp.clone(); sb.rotation.y += Math.PI; sb.position.x += P0.rx * side * 0.05; sb.position.z += P0.rz * side * 0.05; world.add(sb);
     reg(zm - 2.2, zm + 2.2, side, Math.abs(lat), 0.8);
   }
+  const PP = new Builder(), G = new Builder();
+  const PCOL = ["#ff4f81", "#58c3ff", "#ffd23f", "#8be07a", "#c58cff", "#f4f0e6", "#e5482f", "#2fb36b", "#3a7bd5", "#ffffff", "#ff8a1f"];
+  const PANTS = ["#2a2a3a", "#3b3a5a", "#6b4a34", "#f4f0e6", "#1f3a6b"];
+  const SK = ["#f0b48a", "#c98a62", "#8a5a3c", "#e8a47a"], HR2 = ["#2a1636", "#3b2418", "#1d1a24"];
+  function lf(px, py, pz, ry) { const c = Math.cos(ry), s = Math.sin(ry); return function (lx, ly, lz) { return [px + lx * c + lz * s, py + ly, pz - lx * s + lz * c]; }; }
+  function person(px, py, pz, ry, o) {
+    o = o || {}; const l = lf(px, py, pz, ry), skin = pickR(SK), hair = pickR(HR2), top = o.top || pickR(PCOL), bot = o.bot || pickR(PANTS), sit = !!o.sit, saree = !!o.saree;
+    let q;
+    if (sit) {
+      q = l(0, 0.5, 0.22); PP.box(q[0], q[1], q[2], 0.3, 0.14, 0.46, bot, ry);
+      q = l(0, 0.25, 0.44); PP.box(q[0], q[1], q[2], 0.26, 0.5, 0.14, bot, ry);
+      q = l(0, 0.85, 0); PP.box(q[0], q[1], q[2], 0.42, 0.58, 0.24, top, ry);
+      q = l(0, 1.3, 0.02); PP.blob(q[0], q[1], q[2], 0.13, 0.15, 0.13, skin);
+      q = l(0, 1.36, -0.02); PP.blob(q[0], q[1], q[2], 0.14, 0.1, 0.14, hair);
+      if (o.cup !== false) { q = l(0.17, 0.95, 0.28); PP.box(q[0], q[1], q[2], 0.07, 0.09, 0.07, "#fff4d6", ry); q = l(0.2, 0.85, 0.15); PP.box(q[0], q[1], q[2], 0.09, 0.09, 0.3, top, ry); }
+    } else {
+      if (saree) { q = l(0, 0.45, 0); PP.cyl(q[0], q[1], q[2], 0.2, 0.32, 0.9, o.bot || top, 8); }
+      else { [-1, 1].forEach(function (sd) { const w = l(sd * 0.1, 0.4, 0); PP.box(w[0], w[1], w[2], 0.14, 0.8, 0.16, bot, ry); }); }
+      q = l(0, 1.12, 0); PP.box(q[0], q[1], q[2], 0.42, 0.62, 0.24, top, ry);
+      [-1, 1].forEach(function (sd) { const w = l(sd * 0.27, 1.1, 0.02); PP.box(w[0], w[1], w[2], 0.1, 0.55, 0.12, top, ry); });
+      q = l(0, 1.6, 0); PP.blob(q[0], q[1], q[2], 0.13, 0.15, 0.13, skin);
+      q = l(0, 1.66, -0.02); PP.blob(q[0], q[1], q[2], 0.14, 0.1, 0.14, hair);
+      if (o.cup) { q = l(0.2, 1.0, 0.25); PP.box(q[0], q[1], q[2], 0.07, 0.09, 0.07, "#fff4d6", ry); }
+    }
+  }
+  function frameAt(zm, lat, side) {
+    const p = wp(zm, lat, P0), ry = heading(P0), fw = [P0.tx, P0.tz], aw = [P0.rx * side, P0.rz * side];
+    const face = Math.atan2(-aw[0], -aw[1]);   // direction toward the road
+    return { p: p, ry: ry, face: face, at: function (u, y, v) { return [p.x + fw[0] * u + aw[0] * v, p.y + y + 0.14, p.z + fw[1] * u + aw[1] * v]; } };
+  }
+  function chaiDokan(zm, side) {
+    const lat = side * (WALK - 2.2), f = frameAt(zm, lat, side), ry = f.ry, roofC = pickR(["#2f6fd0", "#e5482f", "#c9a35a", "#2fb36b"]);
+    let q = f.at(0, 0.45, 0.6); F.box(q[0], q[1], q[2], 0.8, 0.9, 2.6, "#a8483a", ry);
+    q = f.at(0, 0.92, 0.6); F.box(q[0], q[1], q[2], 1.0, 0.08, 2.8, "#d9b88a", ry);
+    [[-1.5, 0.15], [1.5, 0.15], [-1.5, 2.2], [1.5, 2.2]].forEach(function (c) { q = f.at(c[0], 1.2, c[1]); F.cyl(q[0], q[1], q[2], 0.05, 0.05, 2.4, "#7a5c3a", 6); });
+    q = f.at(0, 2.45, 1.2); F.box(q[0], q[1], q[2], 3.0, 0.08, 3.5, roofC, ry);
+    for (let k = -6; k <= 6; k++) { q = f.at(k * 0.27, 2.36, 0.0); F.box(q[0], q[1], q[2], 0.1, 0.16, 0.2, k % 2 ? "#fff4d6" : roofC, ry); }
+    q = f.at(0, 1.2, 2.3); F.box(q[0], q[1], q[2], 0.15, 2.2, 3.2, "#7a5c3a", ry);
+    for (let k = 0; k < 6; k++) for (let r2 = 0; r2 < 2; r2++) { q = f.at(-1.2 + k * 0.48, 1.35 + r2 * 0.55, 2.1); F.box(q[0], q[1], q[2], 0.25, 0.3, 0.25, pickR(["#ffd23f", "#ff4f81", "#58c3ff", "#8be07a", "#fff4d6", "#e5482f"]), ry); }
+    q = f.at(-0.7, 1.15, 0.6); F.cyl(q[0], q[1], q[2], 0.2, 0.26, 0.3, "#8b4a2b", 8);
+    q = f.at(-0.7, 1.45, 0.6); F.cyl(q[0], q[1], q[2], 0.17, 0.2, 0.3, "#c9ced8", 8); q = f.at(-0.7, 1.5, 0.35); F.box(q[0], q[1], q[2], 0.25, 0.05, 0.08, "#c9ced8", ry);
+    for (let k = 0; k < 4; k++) { q = f.at(0.25 + k * 0.5, 1.07, 0.2); F.box(q[0], q[1], q[2], 0.2, 0.22, 0.24, pickR(["#fff4d6", "#ffd23f", "#ff8a1f"]), ry); }
+    const sp = new THREE.Mesh(planeGeo, signMat("CHAI DOKAN", "#e5482f")); sp.scale.set(2.6, 0.7, 1); q = f.at(0, 2.1, -0.05); sp.position.set(q[0], q[1], q[2]); sp.rotation.y = ry + (side > 0 ? Math.PI / 2 : -Math.PI / 2); world.add(sp);
+    [-1, 1].forEach(function (sd, bi) {
+      const u = sd * 1.0; q = f.at(u, 0.42, -1.2); F.box(q[0], q[1], q[2], 0.4, 0.07, 1.5, "#9a6b3a", ry);
+      [-0.6, 0.6].forEach(function (du) { q = f.at(u + du, 0.2, -1.2); F.box(q[0], q[1], q[2], 0.3, 0.4, 0.07, "#7a5c3a", ry); });
+      for (let k = 0; k < 2; k++) if (rnd() < 0.85) { q = f.at(u - 0.35 + k * 0.7, 0, -1.2); person(q[0], q[1] + 0.0, q[2], f.face, { sit: true }); }
+    });
+    q = f.at(0.3, 0, 1.45); person(q[0], q[1], q[2], f.face, { top: "#f4f0e6", bot: "#f4f0e6" });
+    q = f.at(-1.7, 0, -0.4); person(q[0], q[1], q[2], f.face, { cup: true });
+    if (rnd() < 0.5) { q = f.at(1.8, 0, -0.5); person(q[0], q[1], q[2], f.face + 0.5, { cup: true }); }
+    reg(zm - 1.6, zm + 1.6, side, Math.abs(lat) + 1.2, 2.4);
+  }
+  function walkers(zm, side) {
+    const n = 1 + Math.floor(rnd() * 3);
+    for (let k = 0; k < n; k++) {
+      const lat = side * (HALF + KERB + 0.8 + rnd() * 3.2), q = wp(zm + k * 0.9, lat, P0);
+      person(q.x, q.y + 0.14, q.z, heading(P0) + (rnd() < 0.5 ? 0 : Math.PI) + (rnd() - 0.5) * 0.6, { saree: rnd() < 0.35, cup: rnd() < 0.2 });
+    }
+  }
+  function pandal(zm, side) {
+    const lat = side * (WALK - 1.6), f = frameAt(zm, lat, side), ry = f.ry, RED = "#c62828", GOLD = "#e8b83a", WHITE = "#fff4d6";
+    let q;
+    [-1, 1].forEach(function (sd) {
+      const u = sd * 4.8;
+      q = f.at(u, 4, 0); F.box(q[0], q[1], q[2], 0.9, 8, 0.9, RED, ry);
+      for (let k = 0; k < 5; k++) { q = f.at(u, 0.8 + k * 1.6, 0); F.box(q[0], q[1], q[2], 1.05, 0.28, 1.05, GOLD, ry); }
+      q = f.at(u, 8.3, 0); F.sph(q[0], q[1], q[2], 0.6, 0.6, 0.6, GOLD);
+      q = f.at(u, 9.1, 0); F.cone(q[0], q[1], q[2], 0.35, 1.0, GOLD, 8);
+      for (let y = 0.8; y < 8; y += 0.6) { q = f.at(u, y, -0.5); G.box(q[0], q[1], q[2], 0.14, 0.14, 0.14, pickR(["#fff6a0", "#ff9ac0", "#9ff0ff", "#ffd23f"]), ry); }
+    });
+    for (let k = 0; k < 10; k++) { q = f.at(-4.5 + k * 1.0 + 0.5, 7.5, 0); F.box(q[0], q[1], q[2], 0.9, 1.6, 1.0, k % 2 ? WHITE : RED, ry); }
+    q = f.at(0, 8.5, 0); F.box(q[0], q[1], q[2], 1.0, 0.35, 10.6, GOLD, ry);
+    q = f.at(0, 6.6, 0); F.box(q[0], q[1], q[2], 1.0, 0.2, 10.6, GOLD, ry);
+    for (let k = 0; k < 21; k++) { q = f.at(-5 + k * 0.5, 6.35, -0.52); G.box(q[0], q[1], q[2], 0.16, 0.16, 0.16, ["#fff6a0", "#ff9ac0", "#9ff0ff", "#ffd23f", "#b6ff9a"][k % 5], ry); }
+    for (let k = 0; k < 18; k++) {
+      const u = -4.5 + k * 0.53;
+      q = f.at(u, 6.2, -0.5); const a = new THREE.Vector3(q[0], q[1] + 0.3, q[2]); q = f.at(u + 0.4, 6.2, -0.5); const b = new THREE.Vector3(q[0], q[1] + 0.3, q[2]); q = f.at(u + 0.2, 5.55, -0.5); const c = new THREE.Vector3(q[0], q[1], q[2]);
+      F.tri(a, b, c, k % 2 ? WHITE : RED); F.tri(b, a, c, k % 2 ? WHITE : RED);
+    }
+    const sp = new THREE.Mesh(planeGeo, signMat("DURGA PUJA", "#7a1f2b")); sp.scale.set(5.4, 1.1, 1); q = f.at(0, 7.5, -0.55); sp.position.set(q[0], q[1], q[2]); sp.rotation.y = ry + (side > 0 ? Math.PI / 2 : -Math.PI / 2); world.add(sp);
+    // tent behind the gate
+    for (let k = 0; k < 10; k++) { q = f.at(-4.5 + k + 0.5, 6.0, 4.8); F.box(q[0], q[1], q[2], 9.6, 0.18, 1.0, k % 2 ? WHITE : RED, ry); }
+    q = f.at(0, 3, 9.6); F.box(q[0], q[1], q[2], 0.3, 6, 10.4, "#7a1f2b", ry);
+    [[-5, 0.5], [5, 0.5], [-5, 9.2], [5, 9.2]].forEach(function (c) { q = f.at(c[0], 3, c[1]); F.cyl(q[0], q[1], q[2], 0.1, 0.1, 6, "#7a5c3a", 6); });
+    for (let k = 0; k < 11; k++) { q = f.at(-5 + k * 1.0, 5.75, 0.55); G.box(q[0], q[1], q[2], 0.14, 0.14, 0.14, ["#fff6a0", "#ff9ac0", "#9ff0ff", "#ffd23f", "#b6ff9a"][k % 5], ry); }
+    // idol platform + Durga with her ten-ish arms and a lion
+    q = f.at(0, 0.5, 7.4); F.box(q[0], q[1], q[2], 3.4, 1.0, 5.0, "#d9a441", ry);
+    q = f.at(0, 3.0, 9.2); F.cyl(q[0], q[1], q[2], 1.9, 1.9, 0.12, GOLD, 18, Math.PI / 2, 0, 0);
+    q = f.at(0, 2.0, 8.3); F.cone(q[0], q[1], q[2], 0.8, 1.7, "#c62828", 10);
+    q = f.at(0, 3.0, 8.3); F.box(q[0], q[1], q[2], 0.7, 1.0, 0.4, "#c62828", ry);
+    q = f.at(0, 3.75, 8.3); F.sph(q[0], q[1], q[2], 0.28, 0.32, 0.26, "#e8b48a");
+    q = f.at(0, 4.2, 8.3); F.cone(q[0], q[1], q[2], 0.36, 0.7, GOLD, 8);
+    for (let k = -4; k <= 4; k++) if (k !== 0) { const ang = k * 0.38; q = f.at(Math.sin(ang) * 0.95, 3.2 + Math.cos(ang) * 0.35, 8.1); F.box(q[0], q[1], q[2], 0.1, 0.1, 1.1, "#e8b48a", ry, 0, ang + (k > 0 ? -0.2 : 0.2)); }
+    q = f.at(1.1, 1.35, 7.0); F.box(q[0], q[1], q[2], 0.8, 0.8, 1.4, "#e0a040", ry); q = f.at(1.1, 1.9, 6.4); F.blob(q[0], q[1], q[2], 0.4, 0.4, 0.4, "#e0a040");
+    for (let k = 0; k < 6; k++) { q = f.at(-1.4 + k * 0.56, 1.05, 4.8); G.box(q[0], q[1], q[2], 0.16, 0.16, 0.16, ["#ffe14d", "#ff6f91", "#8ef0ff"][k % 3], ry); }
+    // crowd at the gate, dhak drummers, a couple of kids
+    for (let k = 0; k < 11; k++) { q = f.at(-4 + rnd() * 8, 0.14, -2.6 + rnd() * 3.6); person(q[0], q[1], q[2], f.face + (rnd() - 0.5) * 1.0, { saree: rnd() < 0.45, top: pickR(["#fff4d6", "#c62828", "#ffffff", "#ff4f81", "#ffd23f", "#2fb36b"]) }); }
+    [-1.2, 1.2].forEach(function (u) { q = f.at(u, 0.14, 1.4); person(q[0], q[1], q[2], f.face, { top: "#fff4d6", bot: "#fff4d6" }); const d = f.at(u, 0.14 + 1.0, 1.1); F.cyl(d[0], d[1], d[2], 0.3, 0.3, 0.7, "#c62828", 10, 0, 0, Math.PI / 2 + 0.3); });
+    reg(zm - 5.8, zm + 5.8, side, Math.abs(lat) + 5, 9.4);
+  }
+
   for (const side of [-1, 1]) {
     let zm = 8 + rnd() * 6;
+    const pand = [130 + rnd() * 40, 440 + rnd() * 40, 760 + rnd() * 40, 1010 + rnd() * 40].map((v) => v + (side > 0 ? 0 : 60));
+    let pi = 0;
     while (zm < lm - 14) {
+      if (pi < pand.length && zm >= pand[pi]) { pandal(zm + 6, side); zm += 14; pi++; continue; }
       const r = rnd();
-      if (r < 0.56) { zm += building(zm, side) + 0.4 + rnd() * 1.6; }
-      else if (r < 0.7) { const n = 1 + Math.floor(rnd() * 3); for (let k = 0; k < n; k++) { (rnd() < 0.5 ? tree : palm)(zm + k * 5, side); } zm += n * 5 + 3; }
-      else if (r < 0.8) { stall(zm, side); zm += 4; }
-      else if (r < 0.86) { cow(zm, side); zm += 4; }
-      else if (r < 0.92) { taxi(zm, side); zm += 6; }
-      else if (r < 0.96) { billboard(zm, side); zm += 8; }
+      if (r < 0.44) { zm += building(zm, side) + 0.4 + rnd() * 1.6; }
+      else if (r < 0.56) { const n = 1 + Math.floor(rnd() * 3); for (let k = 0; k < n; k++) { (rnd() < 0.5 ? tree : palm)(zm + k * 5, side); } zm += n * 5 + 3; }
+      else if (r < 0.7) { chaiDokan(zm + 2, side); zm += 6.5; }
+      else if (r < 0.75) { stall(zm, side); zm += 4; }
+      else if (r < 0.8) { cow(zm, side); zm += 4; }
+      else if (r < 0.86) { taxi(zm, side); zm += 6; }
+      else if (r < 0.9) { billboard(zm, side); zm += 8; }
       else { zm += 6; }
+      if (rnd() < 0.4) walkers(zm - 3, side);
     }
     for (let z2 = 3; z2 < lm; z2 += 22) lamp(z2 + (side > 0 ? 0 : 11), side);
   }
@@ -738,9 +848,10 @@ function buildWorld(scene, renderer) {
     }
   }
   const litMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const gMesh = G.mesh(new THREE.MeshBasicMaterial({ vertexColors: true })); world.add(gMesh);
   const mTex = TM.mesh(new THREE.MeshLambertMaterial({ vertexColors: true, map: facMod })), hTex = TH.mesh(new THREE.MeshLambertMaterial({ vertexColors: true, map: facHer }));
-  const fMesh = F.mesh(litMat), tMesh = T.mesh(litMat), wMesh = W.mesh(litMat);
-  [mTex, hTex, fMesh, tMesh, wMesh].forEach(function (m) { m.castShadow = true; m.receiveShadow = true; world.add(m); });
+  const fMesh = F.mesh(litMat), tMesh = T.mesh(litMat), wMesh = W.mesh(litMat), ppMesh = PP.mesh(litMat);
+  [mTex, hTex, fMesh, tMesh, wMesh, ppMesh].forEach(function (m) { m.castShadow = true; m.receiveShadow = true; world.add(m); });
   SIGNS.forEach(function (s) { s.material.fog = true; });
 
   // ----- sky dome, sun, distant Kolkata silhouette -----
@@ -906,7 +1017,7 @@ function createGame(canvas, miniCanvas, cb) {
       const car = { name: names[ai], num: sl + 1, spec: spec, color: cm[0], total: tot, z: mod(tot, L), speed: 0, offset: off, w: KINDS[look].w,
         f: facs[ai], pref: [-0.7, -0.24, 0.24, 0.7][ai % 4] + (Math.random() - 0.5) * 0.2, pct: 0, finished: false, ft: 0, brake: false, yaw: 0, lo: off };
       car.pct = mod(car.z, SEG) / SEG; car.tot = buildToto(spec, car.num); scene.add(car.tot.group);
-      S.cars.push(car); findSeg(car.z).cars.push(car); ai++;
+      car.seg = findSeg(car.z); S.cars.push(car); car.seg.cars.push(car); ai++;
     }
     P.color = S.pspec.body;
     pTot = buildToto(S.pspec, P.num); scene.add(pTot.group); pYaw = 0; pLast = P.x; camLat = P.x * HALF;
@@ -943,7 +1054,7 @@ function createGame(canvas, miniCanvas, cb) {
   function updateCars(dt) {
     const R = KINDS[S.kind], P = S.P, racing = S.phase === "race" || S.phase === "finished" || S.phase === "demo";
     for (const car of S.cars) {
-      const old = findSeg(car.z);
+      const old = car.seg || findSeg(car.z);
       let tgt = 0;
       if (racing) {
         const curveF = 1 - Math.min(0.2, Math.abs(old.curve) * 0.03);
@@ -959,11 +1070,25 @@ function createGame(canvas, miniCanvas, cb) {
       car.brake = dv < -800 * dt;
       car.speed += dv;
       car.offset = clamp(car.offset + carOffsetDelta(car, old) * dt * 60, -0.92, 0.92);
-      car.total += car.speed * dt; car.z = mod(car.total, L); car.pct = mod(car.z, SEG) / SEG;
-      const ns = findSeg(car.z);
-      if (ns !== old) { const i = old.cars.indexOf(car); if (i >= 0) old.cars.splice(i, 1); ns.cars.push(car); }
+      moveCar(car, car.total + car.speed * dt);
       if (!car.finished && car.total >= S.laps * L) { car.finished = true; car.ft = S.raceT; }
     }
+    // no two Totos may share the same space: the one behind gives way
+    for (let i = 0; i < S.cars.length; i++) for (let j = i + 1; j < S.cars.length; j++) {
+      const a = S.cars[i], b = S.cars[j], d = mod(b.total - a.total + L / 2, L) - L / 2;
+      if (Math.abs(d) < LEN && overlap(a.offset, a.w, b.offset, b.w, 1)) {
+        const rear = d > 0 ? a : b, front = d > 0 ? b : a, gap = Math.abs(d);
+        if (gap > LEN * 0.5) { moveCar(rear, front.total - LEN * (rear === a ? 1 : 1)); rear.speed = Math.min(rear.speed, front.speed * 0.97); }
+        const dir = a.offset >= b.offset ? 1 : -1; a.offset = clamp(a.offset + dir * 0.03, -0.92, 0.92); b.offset = clamp(b.offset - dir * 0.03, -0.92, 0.92);
+      }
+    }
+  }
+  function moveCar(car, total) {
+    const old = car.seg || findSeg(car.z);
+    car.total = total; car.z = mod(total, L); car.pct = mod(car.z, SEG) / SEG;
+    const ns = findSeg(car.z);
+    if (ns !== old) { const i = old.cars.indexOf(car); if (i >= 0) old.cars.splice(i, 1); ns.cars.push(car); }
+    car.seg = ns;
   }
   function autoSteer(dt, spd) {
     const P = S.P, R = KINDS[S.kind]; let tx = 0;
@@ -984,9 +1109,9 @@ function createGame(canvas, miniCanvas, cb) {
     S.drifting = racing && keys.drift && sp > 0.5 && steerIn !== 0;
     const dc = dt * 2 * sp;
     if (racing) {
-      const tv = 2 * sp * R.steer * (S.drifting ? 1.35 : 1) * steerIn;
+      const tv = 2 * sp * R.steer * 0.85 * (S.drifting ? 1.35 : 1) * steerIn;
       P.vx += (tv - P.vx) * Math.min(1, dt * 16); P.x += P.vx * dt;
-      P.x -= dc * sp * seg.curve * 0.3 * R.grip * (S.drifting ? 0.45 : 1);
+      P.x -= dc * sp * seg.curve * 0.2 * R.grip * (S.drifting ? 0.45 : 1);
     } else { P.vx = 0; autoSteer(dt, P.speed); }
     P.lean += (steerIn - P.lean) * Math.min(1, dt * 8);
     S.nitroOn = racing && keys.nitro && S.nitro > 0;
@@ -1026,11 +1151,13 @@ function createGame(canvas, miniCanvas, cb) {
     }
     if (racing && P.bump <= 0) {
       for (const car of S.cars) {
-        const d = mod(car.total - P.total + L / 2, L) - L / 2;
-        if (Math.abs(d) < 130 && overlap(P.x, R.w, car.offset, car.w, 0.85)) {
-          if (P.speed > car.speed) P.speed = car.speed * 0.9;
-          const dir = P.x >= car.offset ? 1 : -1; P.x += dir * 0.07; car.offset = clamp(car.offset - dir * 0.05, -0.92, 0.92);
-          P.bump = 0.35; S.shake = reduce ? 2 : 8; sfx.bump(); sfx.horn(); break;
+        const d = mod(car.total - P.total + L / 2, L) - L / 2;   // > 0: the other Toto is ahead of us
+        if (Math.abs(d) < LEN && overlap(P.x, R.w, car.offset, car.w, 1)) {
+          const dir = P.x >= car.offset ? 1 : -1;
+          if (Math.abs(d) < LEN * 0.5) { P.x += dir * 0.08; car.offset = clamp(car.offset - dir * 0.05, -0.92, 0.92); P.speed *= 0.985; }
+          else if (d > 0) { P.total += d - LEN; P.speed = Math.min(P.speed, car.speed * 0.95); P.x += dir * 0.04; car.offset = clamp(car.offset - dir * 0.03, -0.92, 0.92); }
+          else { moveCar(car, P.total - LEN); car.speed = Math.min(car.speed, P.speed * 0.95); P.speed += 120; }
+          P.bump = 0.3; S.shake = reduce ? 2 : 7; sfx.bump(); break;
         }
       }
     }
@@ -1101,21 +1228,22 @@ function createGame(canvas, miniCanvas, cb) {
     const P = S.P, R = KINDS[S.kind];
     // player yaw from lateral motion
     const latV = dt > 0 ? ((P.x - pLast) * HALF) / dt : 0; pLast = P.x;
-    const tgtYaw = -Math.atan2(latV, Math.max(P.speed * MS, 5)) * 0.8 - P.lean * (S.drifting ? 0.4 : 0.14);
+    const tgtYaw = -Math.atan2(latV, Math.max(P.speed * MS, 5)) - P.lean * (S.drifting ? 0.35 : 0.1);
     pYaw += (clamp(tgtYaw, -0.5, 0.5) - pYaw) * Math.min(1, dt * 8);
     placeToto(pTot, P.total, P.x, pYaw, -P.lean * 0.05 + (S.drifting ? -P.lean * 0.05 : 0), P.speed, dt, keys.down || (!keys.up && S.phase === "race" && P.speed > 200 && false), S.nitroOn || P.padT > 0, 0);
     for (const car of S.cars) {
       const lv = dt > 0 ? ((car.offset - car.lo) * HALF) / dt : 0; car.lo = car.offset;
-      const ty = -Math.atan2(lv, Math.max(car.speed * MS, 5)) * 1.2; car.yaw += (clamp(ty, -0.5, 0.5) - car.yaw) * Math.min(1, dt * 6);
+      const ty = -Math.atan2(lv, Math.max(car.speed * MS, 5)); car.yaw += (clamp(ty, -0.5, 0.5) - car.yaw) * Math.min(1, dt * 6);
       placeToto(car.tot, car.total, car.offset, car.yaw, 0, car.speed, dt, car.brake, false, car.num);
     }
     // camera
-    const back = 6.8 + (S.nitroOn ? 0.9 : 0) + (P.padT > 0 ? 0.5 : 0);
+    const back = 5.8 + (S.nitroOn ? 0.9 : 0) + (P.padT > 0 ? 0.5 : 0);
     camLat = P.x * HALF;
-    posAt(P.total - back / MS, A); posAt(P.total + 14 / MS, B2);
+    posAt(P.total - back / MS, A); posAt(P.total + 12 / MS, B2);
     const sh = reduce ? 0 : S.shake * 0.012;
-    camera.position.set(A.x + A.rx * camLat + (Math.random() - 0.5) * sh, A.y + 3.1 + (Math.random() - 0.5) * sh, A.z + A.rz * camLat + (Math.random() - 0.5) * sh);
-    _lookAt.set(B2.x + B2.rx * camLat, B2.y + 1.3, B2.z + B2.rz * camLat); camera.lookAt(_lookAt);
+    camera.position.set(A.x + A.rx * camLat + (Math.random() - 0.5) * sh, A.y + 2.8 + (Math.random() - 0.5) * sh, A.z + A.rz * camLat + (Math.random() - 0.5) * sh);
+    const lookLat = camLat - 12 * Math.tan(clamp(pYaw, -0.5, 0.5)) * 0.5;
+    _lookAt.set(B2.x + B2.rx * lookLat, B2.y + 1.25, B2.z + B2.rz * lookLat); camera.lookAt(_lookAt);
     const tf = 62 + 15 * clamp(P.speed / (R.max * 1.35), 0, 1) + (S.nitroOn ? 7 : 0) + (camera.aspect < 1 ? 16 : 0);
     camFov += (tf - camFov) * Math.min(1, dt * 4); if (Math.abs(camera.fov - camFov) > 0.05) { camera.fov = camFov; camera.updateProjectionMatrix(); }
     // sky + sun follow the camera, light follows the player
