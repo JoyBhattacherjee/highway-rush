@@ -295,9 +295,9 @@ function buildTrack() {
   });
   let sumC = 0; segs.forEach(function (s) { sumC += s.curve; });
   if (Math.abs(sumC) < 1) sumC = 1;
-  const g = (Math.PI * 2) / sumC, step = SEG * MS;
+  const g = 0.003, h0 = (Math.PI * 2 - g * sumC) / N, step = SEG * MS;
   let hd = 0, x = 0, z = 0; const pts = [];
-  for (let i = 0; i < N; i++) { pts.push([x, z]); hd += g * segs[i].curve; x += Math.cos(hd) * step; z += Math.sin(hd) * step; }
+  for (let i = 0; i < N; i++) { pts.push([x, z]); hd += g * segs[i].curve + h0; x += Math.cos(hd) * step; z += Math.sin(hd) * step; }
   const ex = x, ez = z;
   for (let i = 0; i < N; i++) { pts[i][0] -= (ex * i) / N; pts[i][1] -= (ez * i) / N; }
   const px = [], pz = [], py = [], tx = [], tz = [];
@@ -837,7 +837,7 @@ function createGame(canvas, miniCanvas, cb) {
   const mctx = miniCanvas ? miniCanvas.getContext("2d") : null;
   const sfx = mkSfx();
   const reduce = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-  let raf = 0, last = null, destroyed = false, hudT = 0;
+  let raf = 0, last = null, destroyed = false, hudT = 0, qk = 1, qLevel = 0, slowT = 0, ema = 1 / 60;
   const keys = { left: false, right: false, down: false, nitro: false, drift: false, up: false };
 
   // three.js scene
@@ -859,18 +859,25 @@ function createGame(canvas, miniCanvas, cb) {
 
   const S = {
     phase: "demo", paused: false, clock: 0, raceT: 0, cd: 0, count: -1, laps: 999, diff: "normal", kind: "classic", pspec: playerSpec("classic"),
-    P: { total: -2000, speed: 0, x: 0, lean: 0, bump: 0, padT: 0, name: "You", num: 0, color: "#2fb36b", finished: false, ft: 0 },
+    P: { total: -2000, speed: 0, x: 0, vx: 0, lean: 0, bump: 0, padT: 0, name: "You", num: 0, color: "#2fb36b", finished: false, ft: 0 },
     cars: [], nitro: 60, nitroOn: false, drifting: false, draft: false, shake: 0, lastCount: -1, finishInfo: null
   };
   let pTot = null, camLat = 0, camFov = 62, pYaw = 0, pLast = 0;
 
   function resize(cssW, cssH) {
     const dpr = Math.min(window.devicePixelRatio || 1, 2), w = Math.max(160, cssW), h = Math.max(120, cssH || cssW * 0.5625);
-    const k = Math.min(1, Math.sqrt(2400000 / (w * h * dpr * dpr)));   // cap the pixel count
+    const k = Math.min(1, Math.sqrt(2400000 / (w * h * dpr * dpr))) * qk;   // cap the pixel count
+    lastW = w; lastH = h;
     if (renderer) { renderer.setPixelRatio(dpr * k); renderer.setSize(w, h, false); }
     camera.aspect = w / h; camera.fov = 62 + (h > w ? 16 : 0); camFov = camera.fov; camera.updateProjectionMatrix();
   }
+  let lastW = 900, lastH = 506;
   resize(900, 506);
+  function lowerQuality() {
+    qLevel++;
+    if (qLevel === 1 && renderer) { renderer.shadowMap.enabled = false; sunL.castShadow = false; scene.traverse(function (o) { if (o.material) { const ms = Array.isArray(o.material) ? o.material : [o.material]; ms.forEach(function (m) { m.needsUpdate = true; }); } }); }
+    else if (qLevel === 2) { qk = 0.7; resize(lastW, lastH); }
+  }
 
   function clearCars() {
     for (const c of S.cars) if (c.tot) { scene.remove(c.tot.group); disposeObj(c.tot.group); }
@@ -888,7 +895,7 @@ function createGame(canvas, miniCanvas, cb) {
     const names = NAMES.slice().sort(function () { return Math.random() - 0.5; });
     const combos = COMBOS.slice().sort(function () { return Math.random() - 0.5; });
     const facs = []; for (let i = 0; i < 7; i++) facs.push(dr[0] + (dr[1] - dr[0]) * (i / 6)); facs.sort(function () { return Math.random() - 0.5; });
-    const P = S.P; P.speed = 0; P.lean = 0; P.bump = 0; P.padT = 0; P.finished = false; P.ft = 0;
+    const P = S.P; P.speed = 0; P.vx = 0; P.lean = 0; P.bump = 0; P.padT = 0; P.finished = false; P.ft = 0;
     let ai = 0;
     for (let sl = 0; sl < 8; sl++) {
       const row = Math.floor(sl / 2), tot = -(320 + row * 1100), off = sl % 2 ? 0.38 : -0.38;
@@ -977,9 +984,10 @@ function createGame(canvas, miniCanvas, cb) {
     S.drifting = racing && keys.drift && sp > 0.5 && steerIn !== 0;
     const dc = dt * 2 * sp;
     if (racing) {
-      P.x += dc * R.steer * (S.drifting ? 1.35 : 1) * steerIn;
+      const tv = 2 * sp * R.steer * (S.drifting ? 1.35 : 1) * steerIn;
+      P.vx += (tv - P.vx) * Math.min(1, dt * 16); P.x += P.vx * dt;
       P.x -= dc * sp * seg.curve * 0.3 * R.grip * (S.drifting ? 0.45 : 1);
-    } else autoSteer(dt, P.speed);
+    } else { P.vx = 0; autoSteer(dt, P.speed); }
     P.lean += (steerIn - P.lean) * Math.min(1, dt * 8);
     S.nitroOn = racing && keys.nitro && S.nitro > 0;
     if (S.nitroOn) S.nitro = Math.max(0, S.nitro - 36 * R.boostCost * dt);
@@ -1093,7 +1101,7 @@ function createGame(canvas, miniCanvas, cb) {
     const P = S.P, R = KINDS[S.kind];
     // player yaw from lateral motion
     const latV = dt > 0 ? ((P.x - pLast) * HALF) / dt : 0; pLast = P.x;
-    const tgtYaw = -Math.atan2(latV, Math.max(P.speed * MS, 5)) * 1.2 - (S.drifting ? (P.lean * 0.3) : 0);
+    const tgtYaw = -Math.atan2(latV, Math.max(P.speed * MS, 5)) * 0.8 - P.lean * (S.drifting ? 0.4 : 0.14);
     pYaw += (clamp(tgtYaw, -0.5, 0.5) - pYaw) * Math.min(1, dt * 8);
     placeToto(pTot, P.total, P.x, pYaw, -P.lean * 0.05 + (S.drifting ? -P.lean * 0.05 : 0), P.speed, dt, keys.down || (!keys.up && S.phase === "race" && P.speed > 200 && false), S.nitroOn || P.padT > 0, 0);
     for (const car of S.cars) {
@@ -1102,12 +1110,12 @@ function createGame(canvas, miniCanvas, cb) {
       placeToto(car.tot, car.total, car.offset, car.yaw, 0, car.speed, dt, car.brake, false, car.num);
     }
     // camera
-    const back = 7.4 + (S.nitroOn ? 0.9 : 0) + (P.padT > 0 ? 0.5 : 0);
-    camLat += (P.x * HALF * 0.88 - camLat) * Math.min(1, dt * 9);
+    const back = 6.8 + (S.nitroOn ? 0.9 : 0) + (P.padT > 0 ? 0.5 : 0);
+    camLat = P.x * HALF;
     posAt(P.total - back / MS, A); posAt(P.total + 14 / MS, B2);
     const sh = reduce ? 0 : S.shake * 0.012;
-    camera.position.set(A.x + A.rx * camLat + (Math.random() - 0.5) * sh, A.y + 3.5 + (Math.random() - 0.5) * sh, A.z + A.rz * camLat + (Math.random() - 0.5) * sh);
-    _lookAt.set(B2.x + B2.rx * camLat * 0.9, B2.y + 1.2, B2.z + B2.rz * camLat * 0.9); camera.lookAt(_lookAt);
+    camera.position.set(A.x + A.rx * camLat + (Math.random() - 0.5) * sh, A.y + 3.1 + (Math.random() - 0.5) * sh, A.z + A.rz * camLat + (Math.random() - 0.5) * sh);
+    _lookAt.set(B2.x + B2.rx * camLat, B2.y + 1.3, B2.z + B2.rz * camLat); camera.lookAt(_lookAt);
     const tf = 62 + 15 * clamp(P.speed / (R.max * 1.35), 0, 1) + (S.nitroOn ? 7 : 0) + (camera.aspect < 1 ? 16 : 0);
     camFov += (tf - camFov) * Math.min(1, dt * 4); if (Math.abs(camera.fov - camFov) > 0.05) { camera.fov = camFov; camera.updateProjectionMatrix(); }
     // sky + sun follow the camera, light follows the player
@@ -1145,8 +1153,11 @@ function createGame(canvas, miniCanvas, cb) {
     if (destroyed) return;
     raf = requestAnimationFrame(frame);
     const now = ts / 1000; let dt = last === null ? 1 / 60 : now - last; last = now;
+    if (dt < 0.25) { ema += (dt - ema) * 0.05; if (ema > 0.027) slowT += dt; else slowT = Math.max(0, slowT - dt); if (slowT > 2.5 && qLevel < 2) { slowT = 0; ema = 1 / 60; lowerQuality(); } }
     if (dt > 0.05) dt = 0.05; if (dt <= 0) dt = 0.001;
-    lastDt = dt; S.clock += dt; update(dt); render(); drawMini();
+    lastDt = dt; S.clock += dt;
+    let rem = dt; while (rem > 1e-6) { const h = Math.min(rem, 1 / 60); update(h); rem -= h; }
+    render(); drawMini();
   }
 
   const KEYMAP = { ArrowLeft: "left", a: "left", A: "left", ArrowRight: "right", d: "right", D: "right", ArrowUp: "up", w: "up", W: "up", ArrowDown: "down", s: "down", S: "down", " ": "nitro", Shift: "drift" };
@@ -1164,7 +1175,7 @@ function createGame(canvas, miniCanvas, cb) {
     setKey: function (k, v) { keys[k] = !!v; },
     setMuted: function (m) { sfx.mute(m); },
     resize: resize,
-    step: function (dt, noRender) { lastDt = dt; S.clock += dt; update(dt); if (noRender) updateSceneSafe(); else render(); drawMini(); },
+    step: function (dt, noRender) { lastDt = dt; S.clock += dt; let rem = dt; while (rem > 1e-6) { const h = Math.min(rem, 1 / 60); update(h); rem -= h; } if (noRender) updateSceneSafe(); else render(); drawMini(); },
     state: function () { return S; },
     renderer: function () { return renderer; },
     keys: keys,
