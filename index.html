@@ -231,6 +231,12 @@ canvas.stage{display:block;width:100%;height:100%;touch-action:none}
 .tagline{font-size:calc(var(--u)*17)}
 .banner{width:calc(var(--u)*330)}
 .nogl{position:absolute;inset:0;display:grid;place-items:center;padding:calc(var(--u)*30);text-align:center;background:var(--night);color:var(--cream);font-size:calc(var(--u)*22);z-index:5}
+
+.hornbtn{position:absolute;right:calc(var(--u)*58);bottom:calc(var(--u)*222);width:calc(var(--u)*66);height:calc(var(--u)*66);padding:0;border-radius:50%;cursor:pointer;pointer-events:auto;touch-action:none;display:grid;place-items:center;background:#ffd23f;color:var(--ink);border:calc(var(--u)*3) solid var(--ink);box-shadow:0 calc(var(--u)*5) 0 var(--ink)}
+.hornbtn.held{transform:translateY(calc(var(--u)*4));box-shadow:0 calc(var(--u)*1) 0 var(--ink)}
+.hornbtn svg{width:calc(var(--u)*34);height:calc(var(--u)*34);fill:currentColor}
+.hornkey{position:absolute;right:calc(var(--u)*58);bottom:calc(var(--u)*196);width:calc(var(--u)*66);text-align:center;font-weight:800;font-size:calc(var(--u)*12);letter-spacing:.1em;color:var(--cream)}
+@media (hover:none),(pointer:coarse){.hornkey{display:none}}
 </style>
 
 <div id="root"></div>
@@ -528,7 +534,9 @@ function disposeObj(obj) {
 }
 
 /* ---------- the world: road, Kolkata street furniture, sky ---------- */
+const AMB = [];
 function buildWorld(scene, renderer) {
+  AMB.length = 0;
   const world = new THREE.Group(); scene.add(world);
   const rnd = mulberry(20261107), pickR = (a) => a[Math.floor(rnd() * a.length)];
   const P0 = {}, P1 = {};
@@ -724,6 +732,7 @@ function buildWorld(scene, renderer) {
     return { p: p, ry: ry, face: face, at: function (u, y, v) { return [p.x + fw[0] * u + aw[0] * v, p.y + y + 0.14, p.z + fw[1] * u + aw[1] * v]; } };
   }
   function chaiDokan(zm, side) {
+    AMB.push({ z: zm, k: 1 });
     const lat = side * (WALK - 2.2), f = frameAt(zm, lat, side), ry = f.ry, roofC = pickR(["#2f6fd0", "#e5482f", "#c9a35a", "#2fb36b"]);
     let q = f.at(0, 0.45, 0.6); F.box(q[0], q[1], q[2], 0.8, 0.9, 2.6, "#a8483a", ry);
     q = f.at(0, 0.92, 0.6); F.box(q[0], q[1], q[2], 1.0, 0.08, 2.8, "#d9b88a", ry);
@@ -754,6 +763,7 @@ function buildWorld(scene, renderer) {
     }
   }
   function pandal(zm, side) {
+    AMB.push({ z: zm, k: 2 });
     const lat = side * (WALK - 1.6), f = frameAt(zm, lat, side), ry = f.ry, RED = "#c62828", GOLD = "#e8b83a", WHITE = "#fff4d6";
     let q;
     [-1, 1].forEach(function (sd) {
@@ -927,12 +937,103 @@ function mkSfx() {
       s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + dur + 0.03);
     } catch (err) {}
   }
+  /* classic rubber-bulb horn: a nasal "pam-pooom" from two reeds */
+  function honk() {
+    if (!ac) return;
+    try {
+      const t0 = ac.currentTime;
+      [[0, 0.17, 392, 330], [0.15, 0.42, 330, 262]].forEach(function (n) {
+        const t = t0 + n[0], dur = n[1], g = ac.createGain(), bp = ac.createBiquadFilter(), sh = ac.createWaveShaper();
+        const curve = new Float32Array(256); for (let i = 0; i < 256; i++) { const x = i / 128 - 1; curve[i] = Math.tanh(x * 2.4); } sh.curve = curve;
+        bp.type = "bandpass"; bp.frequency.value = 1050; bp.Q.value = 1.3;
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.42, t + 0.015); g.gain.setValueAtTime(0.42, t + dur * 0.62); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        [1, 1.26].forEach(function (r, i) {
+          const o = ac.createOscillator(); o.type = i ? "square" : "sawtooth";
+          o.frequency.setValueAtTime(n[2] * r * 1.06, t); o.frequency.exponentialRampToValueAtTime(n[3] * r, t + dur * 0.8);
+          o.connect(sh); o.start(t); o.stop(t + dur + 0.04);
+        });
+        sh.connect(bp); bp.connect(g); g.connect(master);
+      });
+    } catch (err) {}
+  }
+  /* street life: an original old-Bengali-flavoured tune on a harmonium from the pandal loudspeakers,
+     tabla beat, and soft Bengali chatter near the chai dokans */
+  let mus = null, chat = null, ambOn = false, nextBeat = 0, beatNo = 0, speakAt = 0, bnVoice = null;
+  const SA = 261.63, SCALE = [0, 2, 3, 5, 7, 8, 10, 12];   // Sa in C, komal Ga/Dha/Ni: a Bhairavi-like, wistful mode
+  // [semitone, beats] — a 16-beat tune in two phrases
+  const TUNE = [[7, 1], [8, 0.5], [7, 0.5], [5, 1], [3, 1], [5, 1], [3, 0.5], [2, 0.5], [0, 2],
+                [3, 1], [5, 0.5], [7, 0.5], [8, 1.5], [7, 0.5], [5, 1], [7, 1], [3, 1], [2, 0.5], [0, 0.5], [-2, 2], [0, 2]];
+  const PHRASES = ["দাদা, এক ভাঁড় চা দিন", "আরে, কেমন আছেন?", "পুজোর কটা দিন কী আনন্দ!", "শুভ শারদীয়া!", "ঠাকুর দেখতে যাবি নাকি?", "আজ ভিড় খুব বেশি", "একটা লিকার চা, কম চিনি", "চল রে, আরতি শুরু হবে"];
+  function tuneEnd() { let b = 0; TUNE.forEach(function (n) { b += n[1]; }); return b; }
+  function setupAmb() {
+    if (mus || !ac) return;
+    mus = ac.createGain(); mus.gain.value = 0;
+    const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 220;
+    const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 3200;
+    mus.connect(hp); hp.connect(lp); lp.connect(master);
+    chat = ac.createGain(); chat.gain.value = 0; chat.connect(master);
+    // murmur: three formant-like noise bands pulsing at syllable rates
+    [[520, 3.1], [900, 4.3], [1500, 5.2]].forEach(function (f, i) {
+      const s = ac.createBufferSource(), b = ac.createBiquadFilter(), g = ac.createGain(), l = ac.createOscillator(), lg = ac.createGain();
+      s.buffer = nbuf; s.loop = true; b.type = "bandpass"; b.frequency.value = f[0]; b.Q.value = 2.2;
+      g.gain.value = 0.5; l.frequency.value = f[1]; lg.gain.value = 0.45; l.connect(lg); lg.connect(g.gain); l.start();
+      s.connect(b); b.connect(g); g.connect(chat); s.start(ac.currentTime, i * 0.3);
+    });
+    // tanpura-ish drone on Sa and Pa
+    [SA / 2, SA * 0.75].forEach(function (f) {
+      const o = ac.createOscillator(), g = ac.createGain(); o.type = "triangle"; o.frequency.value = f; g.gain.value = 0.05; o.connect(g); g.connect(mus); o.start();
+    });
+    try { if (window.speechSynthesis) { const pick = function () { const v = window.speechSynthesis.getVoices() || []; bnVoice = v.filter(function (x) { return /^bn/i.test(x.lang); })[0] || null; }; pick(); window.speechSynthesis.onvoiceschanged = pick; } } catch (err) {}
+  }
+  function harmonium(f, t, dur) {
+    [-5, 4].forEach(function (cents) {
+      const o = ac.createOscillator(), g = ac.createGain(), lp = ac.createBiquadFilter(), v = ac.createOscillator(), vg = ac.createGain();
+      o.type = "sawtooth"; o.frequency.value = f; o.detune.value = cents; lp.type = "lowpass"; lp.frequency.value = 1700; lp.Q.value = 0.8;
+      v.frequency.value = 5.2; vg.gain.value = 5; v.connect(vg); vg.connect(o.detune); v.start(t); v.stop(t + dur + 0.1);
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.1, t + 0.05); g.gain.setValueAtTime(0.1, t + Math.max(0.06, dur - 0.08)); g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.04);
+      o.connect(lp); lp.connect(g); g.connect(mus); o.start(t); o.stop(t + dur + 0.08);
+    });
+  }
+  function tabla(t, kind) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = "sine";
+    if (kind === 0) { o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(70, t + 0.16); g.gain.setValueAtTime(0.22, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.28); }
+    else { o.frequency.setValueAtTime(620, t); o.frequency.exponentialRampToValueAtTime(560, t + 0.08); g.gain.setValueAtTime(0.1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.1); }
+    o.connect(g); g.connect(mus); o.start(t); o.stop(t + 0.32);
+  }
+  function ambience(m, c) {
+    if (!ac) return;
+    if (m === null) { try { if (mus) { mus.gain.setTargetAtTime(0, ac.currentTime, 0.1); chat.gain.setTargetAtTime(0, ac.currentTime, 0.1); } if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (err) {} ambOn = false; return; }
+    setupAmb(); if (!mus) return;
+    const t = ac.currentTime, BEAT = 0.62;
+    mus.gain.setTargetAtTime(muted ? 0 : m * 1.1, t, 0.25);
+    chat.gain.setTargetAtTime(muted ? 0 : c * 0.07, t, 0.3);
+    if (!ambOn) { ambOn = true; nextBeat = t + 0.05; beatNo = 0; }
+    if (m < 0.02) { nextBeat = Math.max(nextBeat, t + 0.05); }
+    else {
+      if (nextBeat < t - 0.5) nextBeat = t + 0.05;
+      const total = tuneEnd();
+      while (nextBeat < t + 0.4) {
+        const b = beatNo % total, at = nextBeat;
+        // keherwa-style 8-beat pattern: dha . ge . na tin na .
+        const pat = Math.floor(b) % 4; if (b === Math.floor(b)) tabla(at, pat === 0 || pat === 2 ? 0 : 1);
+        let acc = 0; for (let i = 0; i < TUNE.length; i++) { if (Math.abs(acc - b) < 1e-6) { harmonium(SA * 2 * Math.pow(2, TUNE[i][0] / 12), at, TUNE[i][1] * BEAT * 0.96); } acc += TUNE[i][1]; }
+        nextBeat += BEAT * 0.5; beatNo += 0.5; if (beatNo >= total) beatNo = 0;
+      }
+    }
+    if (c > 0.3 && bnVoice && !muted && t > speakAt) {
+      speakAt = t + 5 + Math.random() * 6;
+      try { const u = new SpeechSynthesisUtterance(PHRASES[Math.floor(Math.random() * PHRASES.length)]); u.voice = bnVoice; u.lang = bnVoice.lang; u.volume = Math.min(0.5, c * 0.5); u.rate = 1.0; u.pitch = 0.9 + Math.random() * 0.4; window.speechSynthesis.speak(u); } catch (err) {}
+    }
+  }
   return {
     init: init, resume: function () { try { if (ac && ac.state === "suspended") ac.resume(); } catch (err) {} },
     beep: function (long) { tone(long ? 1040 : 520, long ? 1040 : 520, long ? 0.5 : 0.18, "square", 0.1); },
     pad: function () { tone(260, 1000, 0.35, "sawtooth", 0.09); },
     bump: function () { noise(0.2, 0.4, 800); tone(110, 50, 0.2, "square", 0.1); },
     horn: function () { tone(340, 330, 0.18, "square", 0.05); },
+    honk: function () { honk(); },
+    amb: function (m, c) { ambience(m, c); },
     finish: function () { [523, 659, 784, 1047].forEach(function (f, i) { setTimeout(function () { tone(f, f, 0.22, "triangle", 0.12); }, i * 120); }); },
     engine: function (v, on, boost) {
       if (!ac || !osc) return;
@@ -1200,6 +1301,16 @@ function createGame(canvas, miniCanvas, cb) {
     updateCars(dt);
     if (S.shake > 0) S.shake = Math.max(0, S.shake - 30 * dt);
     sfx.engine(P.speed, S.phase === "race", S.nitroOn);
+    if (S.phase === "race" || S.phase === "countdown" || S.phase === "finished") {
+      const pz = P.total * MS; let m = 0, c = 0.12;
+      for (let i = 0; i < AMB.length; i++) {
+        let d = Math.abs(pz - AMB[i].z); d = Math.min(d, L * MS - d);
+        if (AMB[i].k === 2) { m = Math.max(m, Math.pow(Math.max(0, 1 - d / 110), 1.6)); c = Math.max(c, Math.max(0, 1 - d / 60)); }
+        else c = Math.max(c, Math.max(0, 1 - d / 38) * 0.8);
+      }
+      sfx.amb(Math.min(1, m) * 0.5, c);
+    } else sfx.amb(null);
+    if (keys.horn && !S.hornHeld) { S.hornHeld = true; sfx.honk(); } else if (!keys.horn) S.hornHeld = false;
     hudT -= dt;
     if (hudT <= 0 && (S.phase === "countdown" || S.phase === "race")) { hudT = 0.05; if (cb.onHud) cb.onHud(snap()); }
   }
@@ -1300,17 +1411,17 @@ function createGame(canvas, miniCanvas, cb) {
     render(); drawMini();
   }
 
-  const KEYMAP = { ArrowLeft: "left", a: "left", A: "left", ArrowRight: "right", d: "right", D: "right", ArrowUp: "up", w: "up", W: "up", ArrowDown: "down", s: "down", S: "down", " ": "nitro", Shift: "drift" };
+  const KEYMAP = { ArrowLeft: "left", a: "left", A: "left", ArrowRight: "right", d: "right", D: "right", ArrowUp: "up", w: "up", W: "up", ArrowDown: "down", s: "down", S: "down", " ": "nitro", Shift: "drift", h: "horn", H: "horn" };
   function onKeyDown(ev) { const k = KEYMAP[ev.key]; if (k) { keys[k] = true; if (S.phase === "race" || S.phase === "countdown") ev.preventDefault(); } }
   function onKeyUp(ev) { const k = KEYMAP[ev.key]; if (k) keys[k] = false; }
-  function clearKeys() { keys.left = keys.right = keys.down = keys.nitro = keys.drift = keys.up = false; }
+  function clearKeys() { keys.left = keys.right = keys.down = keys.nitro = keys.drift = keys.up = keys.horn = false; }
   window.addEventListener("keydown", onKeyDown); window.addEventListener("keyup", onKeyUp); window.addEventListener("blur", clearKeys);
   raf = requestAnimationFrame(frame);
 
   const api = {
     start: function (o) { setupRace({ demo: false, kind: o.kind, diff: o.diff, laps: o.laps }); sfx.init(); sfx.resume(); if (cb.onHud) cb.onHud(snap()); },
-    toMenu: function () { setupRace({ demo: true, kind: S.kind, diff: "normal" }); sfx.engine(0, false, false); },
-    pause: function () { if (S.phase === "race" || S.phase === "countdown") { S.paused = true; sfx.engine(0, false, false); clearKeys(); } },
+    toMenu: function () { setupRace({ demo: true, kind: S.kind, diff: "normal" }); sfx.engine(0, false, false); sfx.amb(null); },
+    pause: function () { if (S.phase === "race" || S.phase === "countdown") { S.paused = true; sfx.engine(0, false, false); sfx.amb(null); clearKeys(); } },
     resume: function () { if (S.paused) { S.paused = false; last = null; sfx.resume(); } },
     setKey: function (k, v) { keys[k] = !!v; },
     setMuted: function (m) { sfx.mute(m); },
@@ -1360,7 +1471,7 @@ function drawPreview(canvas, kind) {
   }
 }
 
-window.HR = { createGame: createGame, KINDS: KINDS, drawPreview: drawPreview, TRACK: TRACK };
+window.HR = { AMB: AMB, createGame: createGame, KINDS: KINDS, drawPreview: drawPreview, TRACK: TRACK };
 })();
 
 </script>
@@ -1476,6 +1587,8 @@ function Hud(props) {
       e(Ring, { v: h.drift ? 1 : 0.0001 }),
       e("span", { className: "face" }, e("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, e("path", { d: "M4 16c3-9 11-10 16-3M16 8l4 5-6 1" })), "DRIFT")),
     e("div", { className: "keycap drift" }, e("span", null, "SHIFT")),
+    e("button", Object.assign({ className: "hornbtn" + (held === "h" ? " held" : ""), "aria-label": "Horn", tabIndex: -1 }, bind("horn", "h")), e("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, e("path", { d: "M3 9v6h4l6 4V5L7 9zM16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12", fill: "currentColor", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" }))),
+    e("div", { className: "hornkey" }, "H · HORN"),
     e("button", Object.assign({ className: "gas" + (held === "g" ? " held" : ""), "aria-label": "Accelerate", tabIndex: -1 }, bind("up", "g")), "GAS"),
     e("div", { className: "steer l" }, e("button", Object.assign({ className: "arrow" + (held === "l" ? " held" : ""), "aria-label": "Steer left", tabIndex: -1 }, bind("left", "l")), chev("M15 5l-7 7 7 7"))),
     e("div", { className: "steer r" }, e("button", Object.assign({ className: "arrow" + (held === "r" ? " held" : ""), "aria-label": "Steer right", tabIndex: -1 }, bind("right", "r")), chev("M9 5l7 7-7 7"))));
@@ -1498,7 +1611,7 @@ function Menu(props) {
       e("div", { className: "row" },
         e("button", { className: "btn go", onClick: props.onStart }, e("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, e("path", { d: "M7 4l13 8-13 8z" })), "Race!")),
       e("div", { className: "hint" },
-        e("div", null, e("b", null, "\u2191"), " gas \u00b7 ", e("b", null, "\u2190 \u2192"), " steer \u00b7 ", e("b", null, "Space"), " N2O · ", e("b", null, "Shift"), " drift · ", e("b", null, "↓"), " brake · ", e("b", null, "P"), " pause"),
+        e("div", null, e("b", null, "\u2191"), " gas \u00b7 ", e("b", null, "\u2190 \u2192"), " steer \u00b7 ", e("b", null, "Space"), " N2O · ", e("b", null, "Shift"), " drift · ", e("b", null, "H"), " horn · ", e("b", null, "↓"), " brake · ", e("b", null, "P"), " pause"),
         e("div", null, "Let go of \u2191 and you coast to a stop. Drifting and slipstreaming fill your N2O."),
         props.best > 0 ? e("div", null, "Best " + props.laps + "-lap time ", e("b", null, fmtTime(props.best))) : null),
       e("div", { className: "rotate" }, "Turn your phone sideways for a bigger view.")),
