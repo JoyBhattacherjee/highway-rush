@@ -1,9 +1,9 @@
 # Highway Rush
 
-A cartoon 8-racer race through the streets of Kolkata, where everyone drives a Bengal Toto (e-rickshaw). Pseudo-3D canvas engine with a React UI, in a single HTML file.
+A 3D 8-racer race through the streets of Kolkata, where everyone drives a Bengal Toto (e-rickshaw). Built with Three.js and React in a single HTML file.
 
 ## Play
-Open `index.html` in a browser (needs internet for React and Google Fonts from CDNs).
+Open `index.html` in a browser (needs internet for React, Three.js and Google Fonts from CDNs, and a browser with WebGL).
 
 ## Controls
 - Gas: hold Up arrow or W (release to coast to a stop)
