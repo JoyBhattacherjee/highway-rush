@@ -970,7 +970,7 @@ function createGame(canvas, miniCanvas, cb) {
 
   const S = {
     phase: "demo", paused: false, clock: 0, raceT: 0, cd: 0, count: -1, laps: 999, diff: "normal", kind: "classic", pspec: playerSpec("classic"),
-    P: { total: -2000, speed: 0, x: 0, vx: 0, lean: 0, bump: 0, padT: 0, name: "You", num: 0, color: "#2fb36b", finished: false, ft: 0 },
+    P: { total: -2000, speed: 0, x: 0, vx: 0, da: 0, lean: 0, bump: 0, padT: 0, name: "You", num: 0, color: "#2fb36b", finished: false, ft: 0 },
     cars: [], nitro: 60, nitroOn: false, drifting: false, draft: false, shake: 0, lastCount: -1, finishInfo: null
   };
   let pTot = null, camLat = 0, camFov = 62, pYaw = 0, pLast = 0;
@@ -1006,7 +1006,7 @@ function createGame(canvas, miniCanvas, cb) {
     const names = NAMES.slice().sort(function () { return Math.random() - 0.5; });
     const combos = COMBOS.slice().sort(function () { return Math.random() - 0.5; });
     const facs = []; for (let i = 0; i < 7; i++) facs.push(dr[0] + (dr[1] - dr[0]) * (i / 6)); facs.sort(function () { return Math.random() - 0.5; });
-    const P = S.P; P.speed = 0; P.vx = 0; P.lean = 0; P.bump = 0; P.padT = 0; P.finished = false; P.ft = 0;
+    const P = S.P; P.speed = 0; P.vx = 0; P.da = 0; P.lean = 0; P.bump = 0; P.padT = 0; P.finished = false; P.ft = 0;
     let ai = 0;
     for (let sl = 0; sl < 8; sl++) {
       const row = Math.floor(sl / 2), tot = -(320 + row * 1100), off = sl % 2 ? 0.38 : -0.38;
@@ -1108,10 +1108,11 @@ function createGame(canvas, miniCanvas, cb) {
     const steerIn = (right ? 1 : 0) - (left ? 1 : 0);
     S.drifting = racing && keys.drift && sp > 0.5 && steerIn !== 0;
     const dc = dt * 2 * sp;
+    P.da += ((S.drifting ? steerIn * 0.5 : 0) - P.da) * Math.min(1, dt * 6);
     if (racing) {
-      const tv = 2 * sp * R.steer * 0.85 * (S.drifting ? 1.35 : 1) * steerIn;
+      const tv = 2 * sp * R.steer * 0.85 * (S.drifting ? 0.9 : 1) * steerIn;
       P.vx += (tv - P.vx) * Math.min(1, dt * 16); P.x += P.vx * dt;
-      P.x -= dc * sp * seg.curve * 0.2 * R.grip * (S.drifting ? 0.45 : 1);
+      P.x -= dc * sp * seg.curve * 0.2 * R.grip * (S.drifting ? 0.3 : 1);
     } else { P.vx = 0; autoSteer(dt, P.speed); }
     P.lean += (steerIn - P.lean) * Math.min(1, dt * 8);
     S.nitroOn = racing && keys.nitro && S.nitro > 0;
@@ -1223,14 +1224,24 @@ function createGame(canvas, miniCanvas, cb) {
     if (t.hand) t.hand.rotation.z = 0.35 + Math.sin(S.clock * 9) * 0.45;
     if (t.flag) t.flag.rotation.y = Math.sin(S.clock * 8 + t0) * 0.5;
   }
+  const smokeTex = radialTex([[0, "rgba(255,255,255,.85)"], [0.5, "rgba(255,255,255,.4)"], [1, "rgba(255,255,255,0)"]]);
+  const puffs = []; for (let i = 0; i < 44; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, transparent: true, depthWrite: false, color: 0xf2e9e2, opacity: 0 })); sp.visible = false; sp.userData.age = 9; scene.add(sp); puffs.push(sp); }
+  let puffI = 0; const _wv = new THREE.Vector3();
+  function spawnPuff(x, y, z, hot) { const sp = puffs[puffI++ % puffs.length]; sp.position.set(x + (Math.random() - 0.5) * 0.3, y, z + (Math.random() - 0.5) * 0.3); sp.userData.age = 0; sp.userData.hot = hot; sp.visible = true; sp.material.color.set(hot ? 0xffc27a : 0xf2e9e2); }
+  function updatePuffs(dt) {
+    for (const sp of puffs) { if (!sp.visible) continue; const a = (sp.userData.age += dt), life = sp.userData.hot ? 0.3 : 0.75; if (a >= life) { sp.visible = false; continue; } const k = a / life; sp.scale.setScalar((sp.userData.hot ? 0.35 : 0.7) + k * (sp.userData.hot ? 0.6 : 2.4)); sp.material.opacity = (sp.userData.hot ? 0.9 : 0.55) * (1 - k); sp.position.y += dt * 0.7; }
+    if (S.drifting && pTot && S.P.speed > 1500) {
+      [-0.62, 0.62].forEach(function (x) { _wv.set(x, 0.18, -1.0); pTot.group.localToWorld(_wv); spawnPuff(_wv.x, _wv.y, _wv.z, false); if (Math.random() < 0.5) spawnPuff(_wv.x, _wv.y + 0.05, _wv.z, true); });
+    }
+  }
   const _lookAt = new THREE.Vector3();
   function updateScene(dt) {
     const P = S.P, R = KINDS[S.kind];
     // player yaw from lateral motion
     const latV = dt > 0 ? ((P.x - pLast) * HALF) / dt : 0; pLast = P.x;
-    const tgtYaw = -Math.atan2(latV, Math.max(P.speed * MS, 5)) - P.lean * (S.drifting ? 0.35 : 0.1);
+    const tgtYaw = -Math.atan2(latV, Math.max(P.speed * MS, 5)) * 0.6 - P.da * 1.05 - P.lean * 0.08;
     pYaw += (clamp(tgtYaw, -0.5, 0.5) - pYaw) * Math.min(1, dt * 8);
-    placeToto(pTot, P.total, P.x, pYaw, -P.lean * 0.05 + (S.drifting ? -P.lean * 0.05 : 0), P.speed, dt, keys.down || (!keys.up && S.phase === "race" && P.speed > 200 && false), S.nitroOn || P.padT > 0, 0);
+    placeToto(pTot, P.total, P.x, pYaw, -P.lean * 0.05 - P.da * 0.2, P.speed, dt, keys.down || (!keys.up && S.phase === "race" && P.speed > 200 && false), S.nitroOn || P.padT > 0, 0);
     for (const car of S.cars) {
       const lv = dt > 0 ? ((car.offset - car.lo) * HALF) / dt : 0; car.lo = car.offset;
       const ty = -Math.atan2(lv, Math.max(car.speed * MS, 5)); car.yaw += (clamp(ty, -0.5, 0.5) - car.yaw) * Math.min(1, dt * 6);
@@ -1246,6 +1257,7 @@ function createGame(canvas, miniCanvas, cb) {
     _lookAt.set(B2.x + B2.rx * lookLat, B2.y + 1.25, B2.z + B2.rz * lookLat); camera.lookAt(_lookAt);
     const tf = 62 + 15 * clamp(P.speed / (R.max * 1.35), 0, 1) + (S.nitroOn ? 7 : 0) + (camera.aspect < 1 ? 16 : 0);
     camFov += (tf - camFov) * Math.min(1, dt * 4); if (Math.abs(camera.fov - camFov) > 0.05) { camera.fov = camFov; camera.updateProjectionMatrix(); }
+    updatePuffs(dt);
     // sky + sun follow the camera, light follows the player
     W3.sky.position.copy(camera.position);
     W3.sun.position.copy(camera.position).addScaledVector(W3.sunDir, 1500);
